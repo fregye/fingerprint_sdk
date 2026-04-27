@@ -9,14 +9,10 @@ import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
-import android.app.Activity;
 
 public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, ActivityAware {
 
     private MethodChannel channel;
-    private Context context;
-    private Activity activity;
-
     private Interface lapiInterface;
     private ID_FprCap fprCap;
     private int devtype = 0;   // 1 = LAPI, 2 = ID_FprCap
@@ -26,8 +22,9 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
     public void onAttachedToEngine(@NonNull FlutterPluginBinding binding) {
         channel = new MethodChannel(binding.getBinaryMessenger(), "fingerprint_sdk");
         channel.setMethodCallHandler(this);
-        context = binding.getApplicationContext();
-        fprCap = new ID_FprCap();  // no-arg constructor
+        Context context = binding.getApplicationContext();
+        lapiInterface = new Interface(context);
+        fprCap = new ID_FprCap();
     }
 
     @Override
@@ -41,10 +38,6 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
     }
 
     private void openDevice(Result result) {
-        if (lapiInterface == null) {
-            result.error("NO_ACTIVITY", "Plugin not attached to activity", null);
-            return;
-        }
         new Thread(() -> {
             long handle = lapiInterface.F_OpenDevice();
             if (handle > 0) {
@@ -80,7 +73,7 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
             return;
         }
         new Thread(() -> {
-            byte[] image = new byte[256 * 360]; // 92,160 bytes grayscale
+            byte[] image = new byte[256 * 360];
             int ret;
             if (devtype == 1) {
                 ret = lapiInterface.F_GetImage(deviceHandle, image);
@@ -90,7 +83,7 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
                 fprCap.LIVESCAN_EndCapture(0);
             }
             if (ret == 1) {
-                result.success(image); // raw 256x360 grayscale bytes → Flutter
+                result.success(image);
             } else {
                 result.error("CAPTURE_FAILED", "ret=" + ret, null);
             }
@@ -98,20 +91,8 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
     }
 
     @Override public void onDetachedFromEngine(@NonNull FlutterPluginBinding b) { channel.setMethodCallHandler(null); }
-
-    @Override
-    public void onAttachedToActivity(@NonNull ActivityPluginBinding b) {
-        activity = b.getActivity();
-        lapiInterface = new Interface(activity);  // Interface needs Activity, init here
-    }
-
+    @Override public void onAttachedToActivity(@NonNull ActivityPluginBinding b) {}
     @Override public void onDetachedFromActivityForConfigChanges() {}
-
-    @Override
-    public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding b) {
-        activity = b.getActivity();
-        lapiInterface = new Interface(activity);
-    }
-
-    @Override public void onDetachedFromActivity() { activity = null; lapiInterface = null; }
+    @Override public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding b) {}
+    @Override public void onDetachedFromActivity() {}
 }

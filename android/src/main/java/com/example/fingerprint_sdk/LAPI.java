@@ -1,6 +1,6 @@
 package com.example.fingerprint_sdk;
 
-import android.app.Activity;
+import android.content.Context;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -24,7 +24,7 @@ public class LAPI {
     public static final int DEF_MATCH_SCORE = 45;
     public static final int TRUE = 1;
     public static final int FALSE = 0;
-    private static Activity m_content = null;
+    private static Context m_content = null;
 
 
     static
@@ -38,7 +38,7 @@ public class LAPI {
 	}
 
 
-	public LAPI(Activity a) {
+	public LAPI(Context a) {
 		m_content = a;
 	}
     private  static void writeLog(String fileName,String content) {

@@ -1,6 +1,6 @@
 package com.example.fingerprint_sdk;
 
-import android.app.Activity;
+import android.content.Context;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -8,7 +8,7 @@ import java.util.ArrayList;
 public class Interface {
     ArrayList<byte[]> fpchars ;
     LAPI c6 ;
-    public Interface(Activity a) {
+    public Interface(Context a) {
         c6 = new LAPI(a);
         fpchars = new ArrayList<byte[]>();
     }
