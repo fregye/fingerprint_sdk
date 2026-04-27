@@ -27,8 +27,7 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
         channel = new MethodChannel(binding.getBinaryMessenger(), "fingerprint_sdk");
         channel.setMethodCallHandler(this);
         context = binding.getApplicationContext();
-        lapiInterface = new Interface(context);
-        fprCap = new ID_FprCap(context);
+        fprCap = new ID_FprCap();  // no-arg constructor
     }
 
     @Override
@@ -42,6 +41,10 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
     }
 
     private void openDevice(Result result) {
+        if (lapiInterface == null) {
+            result.error("NO_ACTIVITY", "Plugin not attached to activity", null);
+            return;
+        }
         new Thread(() -> {
             long handle = lapiInterface.F_OpenDevice();
             if (handle > 0) {
@@ -95,8 +98,20 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
     }
 
     @Override public void onDetachedFromEngine(@NonNull FlutterPluginBinding b) { channel.setMethodCallHandler(null); }
-    @Override public void onAttachedToActivity(@NonNull ActivityPluginBinding b) { activity = b.getActivity(); }
+
+    @Override
+    public void onAttachedToActivity(@NonNull ActivityPluginBinding b) {
+        activity = b.getActivity();
+        lapiInterface = new Interface(activity);  // Interface needs Activity, init here
+    }
+
     @Override public void onDetachedFromActivityForConfigChanges() {}
-    @Override public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding b) { activity = b.getActivity(); }
-    @Override public void onDetachedFromActivity() { activity = null; }
+
+    @Override
+    public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding b) {
+        activity = b.getActivity();
+        lapiInterface = new Interface(activity);
+    }
+
+    @Override public void onDetachedFromActivity() { activity = null; lapiInterface = null; }
 }
