@@ -1,4 +1,4 @@
-package com.example.fingerprint_sdk;
+package com.IDWORLD;
 
 import java.util.HashMap;
 import android.app.PendingIntent;
@@ -33,19 +33,17 @@ public class HostUsb {
     UsbEndpoint endpoint_INT = null;
     UsbEndpoint curEndpoint = null;
 
-    private  static void writeLog(String fileName,String content) {
-        Log.e(TAG,content);
+    private static void writeLog(String fileName, String content) {
+        Log.e(TAG, content);
     }
-    public HostUsb() {    }
+
+    public HostUsb() {}
+
     public boolean AuthorizeDevice(Context paramContext, int VID, int PID) {
         context = paramContext;
         mDevManager = ((UsbManager) context.getSystemService(Context.USB_SERVICE));
         HashMap<String, UsbDevice> deviceList = mDevManager.getDeviceList();
-        if (D) writeLog(TAG, "AuthorizeDevice --------------------- news:" + "mDevManager");
         for (UsbDevice tdevice : deviceList.values()) {
-            if (D) writeLog(TAG, "AuthorizeDevice --------------------- news:" + tdevice);
-            if (D)
-                writeLog(TAG, "news:" + "usb VID:" + tdevice.getVendorId() + "  PID:" + tdevice.getProductId());
             if (tdevice.getVendorId() == VID && (tdevice.getProductId() == PID)) {
                 boolean hasPermission = mDevManager.hasPermission(tdevice);
                 if (!hasPermission) {
@@ -57,13 +55,13 @@ public class HostUsb {
                     return true;
                 } else {
                     device = tdevice;
-                    if (D) writeLog(TAG, "permission denied for device " + device);
                     return true;
                 }
             }
         }
         return false;
     }
+
     private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
@@ -71,52 +69,34 @@ public class HostUsb {
                 synchronized (context) {
                     device = (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                     if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                        if (device != null) {
-                            if (D) writeLog(TAG, "Authorize permission " + device);
-                            if (D)
-                                writeLog(TAG, "BroadcastReceiver onReceive -------------------------- ok");
-                        } else {
-                            if (D)
-                                writeLog(TAG, "BroadcastReceiver onReceive -------------------------- dev = null");
-                        }
+                        if (device != null && D) Log.e(TAG, "Authorize permission " + device);
                     } else {
-                        if (D) writeLog(TAG, "permission denied for device " + device);
-                        if (D)
-                            writeLog(TAG, "BroadcastReceiver onReceive ------------------------- permission denied");
+                        if (D) Log.e(TAG, "permission denied for device " + device);
                     }
                 }
             }
         }
     };
+
     public boolean WaitForInterfaces() {
         int timeover = 0;
         while (device == null) {
             timeover++;
-            try {
-                Thread.sleep(10);
-            } catch (InterruptedException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-            }
-            if (timeover > 1000)
-                return false;
+            try { Thread.sleep(10); } catch (InterruptedException e) { e.printStackTrace(); }
+            if (timeover > 1000) return false;
         }
         return true;
     }
+
     public int OpenDeviceInterfaces() {
         UsbDevice mDevice = device;
-        // Log.d(TAG, "setDevice " + mDevice);
         int fd = -1;
-        if (mDevice == null)
-            return -1;
+        if (mDevice == null) return -1;
         connection = mDevManager.openDevice(mDevice);
-        if (!connection.claimInterface(mDevice.getInterface(0), true))
-            return -1;
-        if (mDevice.getInterfaceCount() < 1)
-            return -1;
+        if (!connection.claimInterface(mDevice.getInterface(0), true)) return -1;
+        if (mDevice.getInterfaceCount() < 1) return -1;
         intf = mDevice.getInterface(0);
-        if (intf.getEndpointCount() == 0)
-            return -1;
+        if (intf.getEndpointCount() == 0) return -1;
         for (int i = 0; i < intf.getEndpointCount(); i++) {
             if (intf.getEndpoint(i).getType() == UsbConstants.USB_ENDPOINT_XFER_BULK) {
                 if (intf.getEndpoint(i).getDirection() == UsbConstants.USB_DIR_IN) {
@@ -126,20 +106,14 @@ public class HostUsb {
                 }
             } else if (intf.getEndpoint(i).getType() == UsbConstants.USB_ENDPOINT_XFER_INT) {
                 endpoint_INT = intf.getEndpoint(i);
-            } else {
-                if (D) writeLog(TAG, "Not Endpoint or other Endpoint ");
             }
         }
         curEndpoint = intf.getEndpoint(0);
-        if ((connection != null)) {
-            if (D) writeLog(TAG, "open connection success!");
+        if (connection != null) {
             fd = connection.getFileDescriptor();
-            if (D) writeLog(TAG, "fd = " + fd);
             return fd;
-        } else {
-            if (D) writeLog(TAG, "finger device open connection FAIL");
-            return -1;
         }
+        return -1;
     }
 
     public void CloseDeviceInterface() {
@@ -156,52 +130,30 @@ public class HostUsb {
         for (i = 0; i < n; i++) {
             System.arraycopy(pBuf, i * m_nEPOutSize, m_abyTransferBuf, 0, m_nEPOutSize);
             w_nRet = connection.bulkTransfer(endpoint_OUT, m_abyTransferBuf, m_nEPOutSize, nTimeOut);
-            if (w_nRet != m_nEPOutSize) {
-                if (D)
-                    writeLog(TAG, "USBBulkSend -------------------------------------\n bulkTransfer failure ");
-                return false;
-            }
+            if (w_nRet != m_nEPOutSize) return false;
         }
         if (r > 0) {
             System.arraycopy(pBuf, i * m_nEPOutSize, m_abyTransferBuf, 0, r);
             w_nRet = connection.bulkTransfer(endpoint_OUT, m_abyTransferBuf, r, nTimeOut);
-            if (w_nRet != r) {
-                if (D)
-                    writeLog(TAG, "USBBulkSend -------------------------------------\n bulkTransfer failure ");
-                return false;
-            }
+            if (w_nRet != r) return false;
         }
-
         return true;
     }
+
     public boolean USBBulkReceive(byte[] pBuf, int nLen, int nTimeOut) {
         int i, n, r, w_nRet;
         n = nLen / m_nEPInSize;
         r = nLen % m_nEPInSize;
         for (i = 0; i < n; i++) {
             w_nRet = connection.bulkTransfer(endpoint_IN, m_abyTransferBuf, m_nEPInSize, nTimeOut);
-            if (w_nRet != m_nEPInSize) {
-                if (D)
-                    writeLog(TAG, "USBBulkReceive -------------------------------------\n bulkTransfer failure ");
-                return false;// w_nRet = connection.bulkTransfer(endpoint_IN,
-                // m_abyTransferBuf, m_nEPInSize,
-                // nTimeOut);//i--;//
-            }
+            if (w_nRet != m_nEPInSize) return false;
             System.arraycopy(m_abyTransferBuf, 0, pBuf, i * m_nEPInSize, m_nEPInSize);
         }
         if (r > 0) {
             w_nRet = connection.bulkTransfer(endpoint_IN, m_abyTransferBuf, r, nTimeOut);
-            if (w_nRet != r) {
-                if (D)
-                    writeLog(TAG, "USBBulkReceive -------------------------------------\n bulkTransfer failure ");
-                // w_nRet = connection.bulkTransfer(endpoint_IN,
-                // m_abyTransferBuf, r, nTimeOut);
-                return false;
-            }
+            if (w_nRet != r) return false;
             System.arraycopy(m_abyTransferBuf, 0, pBuf, i * m_nEPInSize, r);
         }
         return true;
     }
-
-
 }

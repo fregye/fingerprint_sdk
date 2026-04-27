@@ -2,6 +2,8 @@ package com.example.fingerprint_sdk;
 
 import androidx.annotation.NonNull;
 import android.content.Context;
+import com.IDWORLD.Interface;
+import com.zaz.ID_FprCap;
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
