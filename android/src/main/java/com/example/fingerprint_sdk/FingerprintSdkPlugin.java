@@ -2,7 +2,6 @@ package com.example.fingerprint_sdk;
 
 import androidx.annotation.NonNull;
 import android.content.Context;
-import com.IDWORLD.Interface;
 import com.zaz.ID_FprCap;
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -15,17 +14,15 @@ import io.flutter.plugin.common.MethodChannel.Result;
 public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, ActivityAware {
 
     private MethodChannel channel;
-    private Interface lapiInterface;
+    private Context context;
     private ID_FprCap fprCap;
-    private int devtype = 0;   // 1 = LAPI, 2 = ID_FprCap
-    private long deviceHandle = 0;
+    private boolean deviceOpen = false;
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding binding) {
         channel = new MethodChannel(binding.getBinaryMessenger(), "fingerprint_sdk");
         channel.setMethodCallHandler(this);
-        Context context = binding.getApplicationContext();
-        lapiInterface = new Interface(context);
+        context = binding.getApplicationContext();
         fprCap = new ID_FprCap();
     }
 
@@ -41,49 +38,36 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
 
     private void openDevice(Result result) {
         new Thread(() -> {
-            long handle = lapiInterface.F_OpenDevice();
-            if (handle > 0) {
-                deviceHandle = handle;
-                devtype = 1;
-                result.success(true);
-                return;
-            }
-            int ret = fprCap.LIVESCAN_Init();
+            // opendevice() handles Android USB permission + passes fd to native via LIVESCAN_Handle()
+            int ret = fprCap.opendevice(context);
             if (ret == 1) {
-                devtype = 2;
+                deviceOpen = true;
                 result.success(true);
-                return;
+            } else {
+                deviceOpen = false;
+                result.success(false);
             }
-            devtype = 0;
-            result.success(false);
         }).start();
     }
 
     private void closeDevice(Result result) {
         new Thread(() -> {
-            if (devtype == 1) lapiInterface.F_CloseDevice(deviceHandle);
-            else if (devtype == 2) fprCap.LIVESCAN_Close();
-            devtype = 0;
-            deviceHandle = 0;
+            ID_FprCap.LIVESCAN_Close();
+            deviceOpen = false;
             result.success(true);
         }).start();
     }
 
     private void getImage(Result result) {
-        if (devtype == 0) {
+        if (!deviceOpen) {
             result.error("NO_DEVICE", "Device not open", null);
             return;
         }
         new Thread(() -> {
             byte[] image = new byte[256 * 360];
-            int ret;
-            if (devtype == 1) {
-                ret = lapiInterface.F_GetImage(deviceHandle, image);
-            } else {
-                fprCap.LIVESCAN_BeginCapture(0);
-                ret = fprCap.LIVESCAN_GetFPRawData(0, image);
-                fprCap.LIVESCAN_EndCapture(0);
-            }
+            ID_FprCap.LIVESCAN_BeginCapture(0);
+            int ret = ID_FprCap.LIVESCAN_GetFPRawData(0, image);
+            ID_FprCap.LIVESCAN_EndCapture(0);
             if (ret == 1) {
                 result.success(image);
             } else {
