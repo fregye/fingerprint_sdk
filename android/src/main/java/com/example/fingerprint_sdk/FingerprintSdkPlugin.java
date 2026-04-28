@@ -38,14 +38,13 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
 
     private void openDevice(Result result) {
         new Thread(() -> {
-            // opendevice() handles Android USB permission + passes fd to native via LIVESCAN_Handle()
-            int ret = fprCap.opendevice(context);
-            if (ret == 1) {
-                deviceOpen = true;
-                result.success(true);
-            } else {
+            try {
+                int ret = fprCap.opendevice(context);
+                deviceOpen = (ret == 1);
+                result.success(deviceOpen);
+            } catch (Exception e) {
                 deviceOpen = false;
-                result.success(false);
+                result.error("OPEN_FAILED", e.getMessage(), null);
             }
         }).start();
     }

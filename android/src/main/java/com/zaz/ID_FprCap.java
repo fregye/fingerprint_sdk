@@ -9,6 +9,7 @@ import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
+import android.os.Build;
 import android.util.Log;
 
 import java.util.HashMap;
@@ -40,38 +41,60 @@ public class ID_FprCap {
                                         int[] pfSimilarity);
     public native int FP_End();
 
-    private String TAG = "ZAZAPI";
-    private int isonline = 0;
-    private int isbus = 0;
+    private static final String TAG = "ZAZAPI";
+    private static final String ACTION_USB_PERMISSION = "com.android.example.USB_PERMISSION";
+    private static final int TARGET_VID = 0x2109;
+    private static final int TARGET_PID = 0x7638;
 
     private UsbManager mDevManager = null;
     private PendingIntent permissionIntent = null;
     private UsbInterface intf = null;
     private UsbDeviceConnection connection = null;
     private UsbDevice device = null;
-    public int isusbfinshed = 0;
-    private static final String ACTION_USB_PERMISSION = "com.android.example.USB_PERMISSION";
+    public volatile int isusbfinshed = 0;
 
     public int opendevice(Context env) {
         device = null;
         isusbfinshed = 0;
-        int fd = 0;
-        isusbfinshed = getrwusbdevices(env);
-        if (WaitForInterfaces() == false) return -1;
-        fd = OpenDeviceInterfaces();
-        if (fd == -1) return -2;
+        int iret = getrwusbdevices(env);
+        if (iret == 2) {
+            Log.e(TAG, "USB device VID=0x2109 PID=0x7638 not found");
+            return -1;
+        }
+        if (!WaitForInterfaces()) {
+            Log.e(TAG, "USB permission denied or timeout");
+            return -1;
+        }
+        int fd = OpenDeviceInterfaces();
+        if (fd == -1) {
+            Log.e(TAG, "OpenDeviceInterfaces failed");
+            return -2;
+        }
         int status = LIVESCAN_Handle(fd);
-        if (status == 0) { isonline = 1; return 1; }
+        if (status == 0) {
+            Log.i(TAG, "Device opened successfully");
+            return 1;
+        }
+        Log.e(TAG, "LIVESCAN_Handle failed: " + status);
         return -3;
     }
 
     public int getrwusbdevices(Context env) {
-        mDevManager = ((UsbManager) env.getSystemService(Context.USB_SERVICE));
-        permissionIntent = PendingIntent.getBroadcast(env, 0, new Intent(ACTION_USB_PERMISSION), 0);
+        mDevManager = (UsbManager) env.getSystemService(Context.USB_SERVICE);
+
+        // FLAG_MUTABLE required on Android 12+ (API 31+)
+        int flags = Build.VERSION.SDK_INT >= 31
+                ? PendingIntent.FLAG_MUTABLE
+                : 0;
+        permissionIntent = PendingIntent.getBroadcast(env, 0, new Intent(ACTION_USB_PERMISSION), flags);
         env.registerReceiver(mUsbReceiver, new IntentFilter(ACTION_USB_PERMISSION));
+
         HashMap<String, UsbDevice> deviceList = mDevManager.getDeviceList();
         for (UsbDevice tdevice : deviceList.values()) {
-            if (tdevice.getVendorId() == 0x2109 && tdevice.getProductId() == 0x7638) {
+            Log.i(TAG, "Found USB: VID=" + Integer.toHexString(tdevice.getVendorId())
+                    + " PID=" + Integer.toHexString(tdevice.getProductId()));
+            if (tdevice.getVendorId() == TARGET_VID && tdevice.getProductId() == TARGET_PID) {
+                Log.i(TAG, "Target fingerprint device found, requesting permission");
                 mDevManager.requestPermission(tdevice, permissionIntent);
                 return 1;
             }
@@ -81,35 +104,38 @@ public class ID_FprCap {
 
     private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
         public void onReceive(Context context, Intent intent) {
-            context.unregisterReceiver(mUsbReceiver);
-            isusbfinshed = 0;
+            try { context.unregisterReceiver(this); } catch (Exception ignored) {}
             if (ACTION_USB_PERMISSION.equals(intent.getAction())) {
-                synchronized (context) {
-                    device = (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                        if (device != null) isusbfinshed = 1;
-                    } else {
-                        device = null;
-                        isusbfinshed = 2;
-                    }
+                UsbDevice dev = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false) && dev != null) {
+                    Log.i(TAG, "USB permission granted");
+                    device = dev;
+                    isusbfinshed = 1;
+                } else {
+                    Log.e(TAG, "USB permission denied");
+                    isusbfinshed = 2;
                 }
             }
         }
     };
 
+    // Waits up to 15 seconds for USB permission response
     public boolean WaitForInterfaces() {
-        while (device == null || isusbfinshed == 0) {
-            try { Thread.sleep(10); } catch (InterruptedException e) { e.printStackTrace(); }
-            if (isusbfinshed == 2 || isusbfinshed == 3) return false;
+        int timeout = 1500; // 1500 x 10ms = 15 seconds
+        while (timeout-- > 0) {
+            if (isusbfinshed == 1 && device != null) return true;
+            if (isusbfinshed == 2) return false;
+            try { Thread.sleep(10); } catch (InterruptedException e) { return false; }
         }
-        return true;
+        Log.e(TAG, "WaitForInterfaces timed out");
+        return false;
     }
 
     public int OpenDeviceInterfaces() {
         if (device == null) return -1;
         connection = mDevManager.openDevice(device);
+        if (connection == null) return -1;
         if (!connection.claimInterface(device.getInterface(0), true)) return -1;
-        if (connection != null) return connection.getFileDescriptor();
-        return -1;
+        return connection.getFileDescriptor();
     }
 }
