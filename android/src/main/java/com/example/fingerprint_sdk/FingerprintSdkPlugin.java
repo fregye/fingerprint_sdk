@@ -40,7 +40,7 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
         new Thread(() -> {
             try {
                 long handle = lapiInterface.F_OpenDevice();
-                if (handle > 0) {
+                if (handle != 0) {
                     deviceHandle = handle;
                     deviceOpen = true;
                     result.success(true);
