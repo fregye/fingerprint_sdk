@@ -12,11 +12,11 @@ import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbEndpoint;
 import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
+import android.os.Build;
 import android.util.Log;
 
 public class HostUsb {
     private static final String TAG = "OpenHostUsb";
-    private static final boolean D = false;
     private static final String ACTION_USB_PERMISSION = "com.IDWORLD.USB_PERMISSION";
     private Context context = null;
     private UsbManager mDevManager = null;
@@ -33,86 +33,87 @@ public class HostUsb {
     UsbEndpoint endpoint_INT = null;
     UsbEndpoint curEndpoint = null;
 
-    private static void writeLog(String fileName, String content) {
-        Log.e(TAG, content);
-    }
-
     public HostUsb() {}
 
     public boolean AuthorizeDevice(Context paramContext, int VID, int PID) {
         context = paramContext;
-        mDevManager = ((UsbManager) context.getSystemService(Context.USB_SERVICE));
+        mDevManager = (UsbManager) context.getSystemService(Context.USB_SERVICE);
         HashMap<String, UsbDevice> deviceList = mDevManager.getDeviceList();
+
         for (UsbDevice tdevice : deviceList.values()) {
-            if (tdevice.getVendorId() == VID && (tdevice.getProductId() == PID)) {
-                boolean hasPermission = mDevManager.hasPermission(tdevice);
-                if (!hasPermission) {
-                    PendingIntent permissionIntent = PendingIntent.getBroadcast(context, 0,
-                            new Intent(ACTION_USB_PERMISSION), 0);
-                    context.registerReceiver(mUsbReceiver, new IntentFilter(ACTION_USB_PERMISSION));
-                    context.registerReceiver(mUsbReceiver, new IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED));
-                    mDevManager.requestPermission(tdevice, permissionIntent);
+            if (tdevice.getVendorId() == VID && tdevice.getProductId() == PID) {
+                if (mDevManager.hasPermission(tdevice)) {
+                    // Permission already granted — set device directly, no dialog needed
+                    device = tdevice;
+                    Log.i(TAG, "USB permission already granted for VID=" + Integer.toHexString(VID));
                     return true;
                 } else {
-                    device = tdevice;
+                    // Request permission — FLAG_MUTABLE required on Android 12+
+                    int flags = Build.VERSION.SDK_INT >= 31
+                            ? PendingIntent.FLAG_MUTABLE
+                            : 0;
+                    PendingIntent permissionIntent = PendingIntent.getBroadcast(
+                            context, 0, new Intent(ACTION_USB_PERMISSION), flags);
+                    context.registerReceiver(mUsbReceiver, new IntentFilter(ACTION_USB_PERMISSION));
+                    mDevManager.requestPermission(tdevice, permissionIntent);
+                    Log.i(TAG, "USB permission requested for VID=" + Integer.toHexString(VID));
                     return true;
                 }
             }
         }
+        Log.e(TAG, "USB device VID=" + Integer.toHexString(VID) + " PID=" + Integer.toHexString(PID) + " not found");
         return false;
     }
 
     private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
         public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if (ACTION_USB_PERMISSION.equals(action)) {
-                synchronized (context) {
-                    device = (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                        if (device != null && D) Log.e(TAG, "Authorize permission " + device);
-                    } else {
-                        if (D) Log.e(TAG, "permission denied for device " + device);
-                    }
+            if (ACTION_USB_PERMISSION.equals(intent.getAction())) {
+                try { context.unregisterReceiver(this); } catch (Exception ignored) {}
+                UsbDevice dev = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false) && dev != null) {
+                    Log.i(TAG, "USB permission granted");
+                    device = dev;
+                } else {
+                    Log.e(TAG, "USB permission denied");
                 }
             }
         }
     };
 
+    // Waits up to 15 seconds for permission dialog response
     public boolean WaitForInterfaces() {
-        int timeover = 0;
-        while (device == null) {
-            timeover++;
-            try { Thread.sleep(10); } catch (InterruptedException e) { e.printStackTrace(); }
-            if (timeover > 1000) return false;
+        int timeout = 1500; // 1500 x 10ms = 15 seconds
+        while (device == null && timeout-- > 0) {
+            try { Thread.sleep(10); } catch (InterruptedException e) { return false; }
+        }
+        if (device == null) {
+            Log.e(TAG, "WaitForInterfaces timed out");
+            return false;
         }
         return true;
     }
 
     public int OpenDeviceInterfaces() {
         UsbDevice mDevice = device;
-        int fd = -1;
         if (mDevice == null) return -1;
         connection = mDevManager.openDevice(mDevice);
+        if (connection == null) return -1;
         if (!connection.claimInterface(mDevice.getInterface(0), true)) return -1;
         if (mDevice.getInterfaceCount() < 1) return -1;
         intf = mDevice.getInterface(0);
         if (intf.getEndpointCount() == 0) return -1;
         for (int i = 0; i < intf.getEndpointCount(); i++) {
             if (intf.getEndpoint(i).getType() == UsbConstants.USB_ENDPOINT_XFER_BULK) {
-                if (intf.getEndpoint(i).getDirection() == UsbConstants.USB_DIR_IN) {
+                if (intf.getEndpoint(i).getDirection() == UsbConstants.USB_DIR_IN)
                     endpoint_IN = intf.getEndpoint(i);
-                } else if (intf.getEndpoint(i).getDirection() == UsbConstants.USB_DIR_OUT) {
+                else if (intf.getEndpoint(i).getDirection() == UsbConstants.USB_DIR_OUT)
                     endpoint_OUT = intf.getEndpoint(i);
-                }
             } else if (intf.getEndpoint(i).getType() == UsbConstants.USB_ENDPOINT_XFER_INT) {
                 endpoint_INT = intf.getEndpoint(i);
             }
         }
         curEndpoint = intf.getEndpoint(0);
-        if (connection != null) {
-            fd = connection.getFileDescriptor();
-            return fd;
-        }
+        if (connection != null) return connection.getFileDescriptor();
         return -1;
     }
 
