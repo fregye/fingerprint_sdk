@@ -31,8 +31,10 @@ public class Interface {
         isbus = 1;
         long vals = 0xffffffff & 0xffffffffL;
         long ret = c6.OpenDevice();
+        android.util.Log.i("IDWORLD_Interface", "F_OpenDevice: raw ret=" + ret + " (0x" + Long.toHexString(ret) + ")");
         if (ret == vals) {
             isbus = 0;
+            android.util.Log.e("IDWORLD_Interface", "F_OpenDevice: OpenDevice returned 0xFFFFFFFF (-1), treating as 0");
             return 0;
         }
         if (ret != 0) isonline = 1;

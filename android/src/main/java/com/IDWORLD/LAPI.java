@@ -61,16 +61,20 @@ public class LAPI {
     private static int CallBack(int message, int notify, int param, Object data) {
         switch (message) {
             case MSG_OPEN_DEVICE:
+                Log.i(TAG, "CallBack MSG_OPEN_DEVICE");
                 m_usbHost = new HostUsb();
                 if (!m_usbHost.AuthorizeDevice(m_content, VID, PID)) {
+                    Log.e(TAG, "CallBack: AuthorizeDevice failed");
                     m_usbHost = null;
                     return 0;
                 }
                 if (m_usbHost.WaitForInterfaces() == false) {
+                    Log.e(TAG, "CallBack: WaitForInterfaces failed");
                     m_usbHost = null;
                     return 0;
                 }
                 m_hUSB = m_usbHost.OpenDeviceInterfaces();
+                Log.i(TAG, "CallBack: OpenDeviceInterfaces returned " + m_hUSB);
                 if (m_hUSB <= 0) {
                     m_usbHost = null;
                     return 0;

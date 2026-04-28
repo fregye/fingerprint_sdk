@@ -95,13 +95,13 @@ public class HostUsb {
 
     public int OpenDeviceInterfaces() {
         UsbDevice mDevice = device;
-        if (mDevice == null) return -1;
+        if (mDevice == null) { Log.e(TAG, "OpenDeviceInterfaces: device is null"); return -1; }
         connection = mDevManager.openDevice(mDevice);
-        if (connection == null) return -1;
-        if (!connection.claimInterface(mDevice.getInterface(0), true)) return -1;
-        if (mDevice.getInterfaceCount() < 1) return -1;
+        if (connection == null) { Log.e(TAG, "OpenDeviceInterfaces: openDevice returned null"); return -1; }
+        if (mDevice.getInterfaceCount() < 1) { Log.e(TAG, "OpenDeviceInterfaces: no interfaces"); return -1; }
         intf = mDevice.getInterface(0);
-        if (intf.getEndpointCount() == 0) return -1;
+        if (!connection.claimInterface(intf, true)) { Log.e(TAG, "OpenDeviceInterfaces: claimInterface failed"); return -1; }
+        Log.i(TAG, "OpenDeviceInterfaces: endpoints=" + intf.getEndpointCount());
         for (int i = 0; i < intf.getEndpointCount(); i++) {
             if (intf.getEndpoint(i).getType() == UsbConstants.USB_ENDPOINT_XFER_BULK) {
                 if (intf.getEndpoint(i).getDirection() == UsbConstants.USB_DIR_IN)
@@ -113,8 +113,9 @@ public class HostUsb {
             }
         }
         curEndpoint = intf.getEndpoint(0);
-        if (connection != null) return connection.getFileDescriptor();
-        return -1;
+        int fd = connection.getFileDescriptor();
+        Log.i(TAG, "OpenDeviceInterfaces: fd=" + fd);
+        return fd;
     }
 
     public void CloseDeviceInterface() {
