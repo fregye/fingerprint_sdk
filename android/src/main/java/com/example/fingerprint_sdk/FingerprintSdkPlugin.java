@@ -8,12 +8,16 @@ import android.os.Looper;
 import com.IDWORLD.Interface;
 import com.dk.log.DKLog;
 import com.dk.log.DKLogCallback;
+import com.dk.uartnfc.Card.Card;
+import com.dk.uartnfc.DeviceManager.DeviceManager;
 import com.dk.uartnfc.DeviceManager.DeviceManagerCallback;
 import com.dk.uartnfc.DeviceManager.UartNfcDevice;
 import com.dk.uartnfc.Exception.DeviceNoResponseException;
 import com.dk.uartnfc.Tool.StringTool;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -33,6 +37,7 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
 
     private UartNfcDevice uartNfcDevice;
     private EventChannel.EventSink nfcEventSink;
+    private volatile Card currentCard = null;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
@@ -77,13 +82,14 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
     @Override
     public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
         switch (call.method) {
-            case "openDevice":    openDevice(result);       break;
-            case "closeDevice":   closeDevice(result);      break;
-            case "getImage":      getImage(result);         break;
-            case "openNfc":       openNfc(call, result);    break;
-            case "closeNfc":      closeNfc(result);         break;
-            case "getNfcPorts":   getNfcPorts(result);      break;
-            case "findAndOpenNfc": findAndOpenNfc(result);  break;
+            case "openDevice":     openDevice(result);        break;
+            case "closeDevice":    closeDevice(result);       break;
+            case "getImage":       getImage(result);          break;
+            case "openNfc":        openNfc(call, result);     break;
+            case "closeNfc":       closeNfc(result);          break;
+            case "getNfcPorts":    getNfcPorts(result);       break;
+            case "findAndOpenNfc": findAndOpenNfc(result);    break;
+            case "transceiveNfc":  transceiveNfc(call, result); break;
             default: result.notImplemented();
         }
     }
@@ -170,8 +176,6 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
         result.success(ports);
     }
 
-    // Tries each available port until the DK21 responds to getFirmwareVersion().
-    // Returns the port name on success, or an error if not found.
     private void findAndOpenNfc(Result result) {
         new Thread(() -> {
             try {
@@ -207,23 +211,73 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
         }).start();
     }
 
+    // Sends a raw APDU/command to the currently active card via reflection,
+    // since transceive() is not on the Card base class but on each subtype.
+    private void transceiveNfc(MethodCall call, Result result) {
+        byte[] command = call.argument("cmd");
+        Integer timeout = call.argument("timeout");
+        if (timeout == null) timeout = 1000;
+        Card card = currentCard;
+        if (card == null) {
+            result.error("NO_CARD", "No card present on reader", null);
+            return;
+        }
+        final int t = timeout;
+        new Thread(() -> {
+            try {
+                java.lang.reflect.Method m = card.getClass()
+                        .getMethod("transceive", byte[].class, int.class);
+                byte[] response = (byte[]) m.invoke(card, command, t);
+                result.success(response);
+            } catch (NoSuchMethodException e) {
+                result.error("NOT_SUPPORTED",
+                        "Card type " + card.getClass().getSimpleName() + " does not support transceive", null);
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                result.error("TRANSCEIVE_FAILED",
+                        e.getCause() != null ? e.getCause().getMessage() : "no response", null);
+            } catch (Exception e) {
+                result.error("TRANSCEIVE_FAILED", e.getMessage(), null);
+            }
+        }).start();
+    }
+
     private final DeviceManagerCallback nfcCallback = new DeviceManagerCallback() {
         @Override
         public void onReceiveRfnSearchCard(boolean blnIsSus, int cardType,
                                            byte[] bytCardSn, byte[] bytCarATS) {
-            String uid = StringTool.byteHexToSting(bytCardSn);
+            currentCard = uartNfcDevice.getCard();
+            Map<String, Object> event = new HashMap<>();
+            event.put("uid", StringTool.byteHexToSting(bytCardSn));
+            event.put("cardType", cardType);
+            event.put("cardTypeName", cardTypeName(cardType));
+            event.put("ats", StringTool.byteHexToSting(bytCarATS));
             mainHandler.post(() -> {
-                if (nfcEventSink != null) nfcEventSink.success(uid);
+                if (nfcEventSink != null) nfcEventSink.success(event);
             });
         }
 
         @Override
         public void onReceiveCardLeave() {
+            currentCard = null;
             mainHandler.post(() -> {
                 if (nfcEventSink != null) nfcEventSink.success(null);
             });
         }
     };
+
+    private static String cardTypeName(int type) {
+        switch (type) {
+            case DeviceManager.CARD_TYPE_ISO4443_A:  return "CPU_ISO14443A";
+            case DeviceManager.CARD_TYPE_FELICA:     return "FeliCa";
+            case DeviceManager.CARD_TYPE_ULTRALIGHT: return "NTAG_Ultralight";
+            case DeviceManager.CARD_TYPE_MIFARE:     return "Mifare";
+            case DeviceManager.CARD_TYPE_ISO15693:   return "ISO15693";
+            case DeviceManager.CARD_TYPE_DESFire:    return "DESFire";
+            case DeviceManager.CARD_TYPE_ISO4443_B:  return "ISO14443B";
+            case 7:                                   return "ID_125kHz";
+            default:                                  return "Unknown_" + type;
+        }
+    }
 
     @Override public void onDetachedFromEngine(@NonNull FlutterPluginBinding b) {
         channel.setMethodCallHandler(null);
