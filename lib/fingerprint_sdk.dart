@@ -274,6 +274,56 @@ class FingerprintSdk {
     return result;
   }
 
+  /// Diagnostic probe for the Ghana Card (or any NFC smart card).
+  /// Returns a multiline string — print it to logcat.
+  /// Keep the card on the reader the whole time.
+  static Future<String> diagnoseCard() async {
+    final sb = StringBuffer();
+
+    Future<void> probe(String label, List<int> cmd) async {
+      sb.write('$label → ');
+      try {
+        final r = await transceiveNfc(cmd, timeout: 2000);
+        sb.writeln(r.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(' '));
+      } on PlatformException catch (e) {
+        sb.writeln('ERR ${e.code}: ${e.message}');
+      } catch (e) {
+        sb.writeln('EXCEPTION: $e');
+      }
+    }
+
+    // ── DeSFire probes ──────────────────────────────────────────────────────
+    sb.writeln('=== DeSFire ===');
+    await probe('GetApplicationIDs',   [0x90, 0x6A, 0x00, 0x00, 0x00]);
+    await probe('Select PICC 000000',  [0x90, 0x5A, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00]);
+    await probe('GetFileIDs on PICC',  [0x90, 0x6F, 0x00, 0x00, 0x00]);
+    await probe('GetVersion',          [0x90, 0x60, 0x00, 0x00, 0x00]);
+
+    // ── ICAO / ISO 7816 probes (ePassport / eID style) ─────────────────────
+    sb.writeln('=== ISO 7816 / ICAO ===');
+    // Select Master File
+    await probe('SELECT MF',           [0x00, 0xA4, 0x00, 0x0C]);
+    // Select ICAO LDS application (ePassport AID)
+    await probe('SELECT LDS AID',      [0x00, 0xA4, 0x04, 0x0C, 0x07,
+                                        0xA0, 0x00, 0x00, 0x02, 0x47, 0x10, 0x01]);
+    // Read EF.CardAccess (public on PACE cards, no auth needed)
+    await probe('SELECT EF.CardAccess',[0x00, 0xA4, 0x02, 0x0C, 0x02, 0x01, 0x1C]);
+    await probe('READ EF.CardAccess',  [0x00, 0xB0, 0x00, 0x00, 0x00]);
+    // Read EF.COM (Common — may work without BAC on some cards)
+    await probe('SELECT EF.COM',       [0x00, 0xA4, 0x02, 0x0C, 0x02, 0x01, 0x1E]);
+    await probe('READ EF.COM',         [0x00, 0xB0, 0x00, 0x00, 0x00]);
+
+    // ── Ghana Card specific — try known NIA AID patterns ──────────────────
+    sb.writeln('=== NIA Ghana Card AIDs ===');
+    // Common West African eID AID
+    await probe('SELECT NIA AID 1',    [0x00, 0xA4, 0x04, 0x00, 0x06,
+                                        0xA0, 0x00, 0x00, 0x00, 0x18, 0x10, 0x00]);
+    await probe('SELECT NIA AID 2',    [0x00, 0xA4, 0x04, 0x00, 0x05,
+                                        0xE8, 0x28, 0xBD, 0x08, 0x0F, 0x00]);
+
+    return sb.toString();
+  }
+
   // ── DeSFire internals ─────────────────────────────────────────────────────────
 
   // Sends a DeSFire command and collects all frames (status 91 AF = more data).
