@@ -6,6 +6,8 @@ import android.os.Handler;
 import android.os.Looper;
 
 import com.IDWORLD.Interface;
+import com.dk.log.DKLog;
+import com.dk.log.DKLogCallback;
 import com.dk.uartnfc.DeviceManager.DeviceManagerCallback;
 import com.dk.uartnfc.DeviceManager.UartNfcDevice;
 import com.dk.uartnfc.Exception.DeviceNoResponseException;
@@ -40,6 +42,21 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
 
         Context context = binding.getApplicationContext();
         lapiInterface = new Interface(context);
+
+        // Prevent SDK crash: SerialHelper.ReadThread catches IOExceptions whose
+        // getMessage() is null; the default DKLogCallback passes null to
+        // android.util.Log.println_native which throws NPE and kills the process.
+        DKLog.setLogCallback(new DKLogCallback() {
+            @Override public void onReceiveLogI(String tag, String msg) {
+                if (msg != null) android.util.Log.i(tag, msg);
+            }
+            @Override public void onReceiveLogD(String tag, String msg) {
+                if (msg != null) android.util.Log.d(tag, msg);
+            }
+            @Override public void onReceiveLogE(String tag, String msg) {
+                if (msg != null) android.util.Log.e(tag, msg);
+            }
+        });
 
         uartNfcDevice = new UartNfcDevice();
         uartNfcDevice.setCallBack(nfcCallback);
