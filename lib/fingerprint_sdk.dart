@@ -90,7 +90,10 @@ class FingerprintSdk {
       'cmd': Uint8List.fromList(command),
       'timeout': timeout,
     });
-    return Uint8List.fromList(List<int>.from(result));
+    if (result == null) {
+      throw PlatformException(code: 'NO_RESPONSE', message: 'Card removed or no response');
+    }
+    return Uint8List.fromList(List<int>.from(result as List));
   }
 
   // ── Helpers for common read patterns ─────────────────────────────────────────
