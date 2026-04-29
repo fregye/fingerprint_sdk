@@ -246,10 +246,10 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
                                            byte[] bytCardSn, byte[] bytCarATS) {
             currentCard = uartNfcDevice.getCard();
             Map<String, Object> event = new HashMap<>();
-            event.put("uid", StringTool.byteHexToSting(bytCardSn));
+            event.put("uid", bytCardSn != null ? StringTool.byteHexToSting(bytCardSn) : "");
             event.put("cardType", cardType);
             event.put("cardTypeName", cardTypeName(cardType));
-            event.put("ats", StringTool.byteHexToSting(bytCarATS));
+            event.put("ats", bytCarATS != null ? StringTool.byteHexToSting(bytCarATS) : "");
             mainHandler.post(() -> {
                 if (nfcEventSink != null) nfcEventSink.success(event);
             });

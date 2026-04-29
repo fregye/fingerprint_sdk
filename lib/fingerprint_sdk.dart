@@ -16,10 +16,10 @@ class NfcCardInfo {
   });
 
   factory NfcCardInfo.fromMap(Map<String, dynamic> m) => NfcCardInfo(
-        uid: m['uid'] as String,
-        cardType: m['cardType'] as int,
-        cardTypeName: m['cardTypeName'] as String,
-        ats: m['ats'] as String,
+        uid: (m['uid'] as String?) ?? '',
+        cardType: (m['cardType'] as int?) ?? 0,
+        cardTypeName: (m['cardTypeName'] as String?) ?? 'Unknown',
+        ats: (m['ats'] as String?) ?? '',
       );
 
   @override
