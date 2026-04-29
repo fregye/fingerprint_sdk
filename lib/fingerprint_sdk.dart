@@ -126,6 +126,62 @@ class FingerprintSdk {
     return transceiveNfc(cmd);
   }
 
+  // ── DESFire public commands (no authentication required) ─────────────────────
+
+  /// Returns the list of Application IDs on a DESFire card as hex strings,
+  /// e.g. ["000001", "AABBCC"]. Call while card is still on the reader.
+  static Future<List<String>> readDesFireApplicationIds() async {
+    final List<int> buf = await _desFireMultiFrame([0x90, 0x6A, 0x00, 0x00, 0x00]);
+    final List<String> aids = [];
+    for (int i = 0; i + 2 < buf.length; i += 3) {
+      aids.add(buf
+          .sublist(i, i + 3)
+          .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+          .join());
+    }
+    return aids;
+  }
+
+  /// Returns DESFire card version / manufacture info.
+  /// Keys: hwMajorVersion, hwMinorVersion, swMajorVersion, swMinorVersion,
+  ///       uid (7-byte hex), productionWeek, productionYear, rawHex.
+  static Future<Map<String, dynamic>> readDesFireVersion() async {
+    final List<int> d = await _desFireMultiFrame([0x90, 0x60, 0x00, 0x00, 0x00]);
+    final raw = d.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(' ');
+    if (d.length < 28) return {'rawHex': raw};
+    return {
+      'hwVendorId':      d[0].toRadixString(16).padLeft(2, '0').toUpperCase(),
+      'hwMajorVersion':  d[3],
+      'hwMinorVersion':  d[4],
+      'swMajorVersion':  d[10],
+      'swMinorVersion':  d[11],
+      'uid': d.sublist(14, 21)
+              .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+              .join(),
+      'productionWeek':  d[26],
+      'productionYear':  2000 + d[27],
+      'rawHex': raw,
+    };
+  }
+
+  // Sends a DESFire command and collects all frames (status 91 AF = more data).
+  static Future<List<int>> _desFireMultiFrame(List<int> firstCmd) async {
+    const moreData = [0x90, 0xAF, 0x00, 0x00, 0x00];
+    final List<int> buf = [];
+    var resp = await transceiveNfc(firstCmd);
+    while (resp.length >= 2) {
+      final sw1 = resp[resp.length - 2];
+      final sw2 = resp[resp.length - 1];
+      buf.addAll(resp.sublist(0, resp.length - 2));
+      if (sw1 == 0x91 && sw2 == 0xAF) {
+        resp = await transceiveNfc(moreData);
+      } else {
+        break;
+      }
+    }
+    return buf;
+  }
+
   static List<int> _hexToBytes(String hex) {
     hex = hex.replaceAll(' ', '');
     final result = <int>[];
