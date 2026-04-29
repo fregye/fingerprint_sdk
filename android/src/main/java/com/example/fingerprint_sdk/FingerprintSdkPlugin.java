@@ -8,7 +8,6 @@ import android.os.Looper;
 import com.IDWORLD.Interface;
 import com.dk.log.DKLog;
 import com.dk.log.DKLogCallback;
-import com.dk.uartnfc.Card.Card;
 import com.dk.uartnfc.DeviceManager.DeviceManager;
 import com.dk.uartnfc.DeviceManager.DeviceManagerCallback;
 import com.dk.uartnfc.DeviceManager.UartNfcDevice;
@@ -37,7 +36,7 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
 
     private UartNfcDevice uartNfcDevice;
     private EventChannel.EventSink nfcEventSink;
-    private volatile Card currentCard = null;
+    private volatile Object currentCard = null;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
@@ -217,7 +216,7 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
         byte[] command = call.argument("cmd");
         Integer timeout = call.argument("timeout");
         if (timeout == null) timeout = 1000;
-        Card card = currentCard;
+        Object card = currentCard;
         if (card == null) {
             result.error("NO_CARD", "No card present on reader", null);
             return;
