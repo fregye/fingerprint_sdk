@@ -51,4 +51,10 @@ class FingerprintSdk {
     final List<dynamic> ports = await _channel.invokeMethod('getNfcPorts') ?? [];
     return ports.cast<String>();
   }
+
+  /// Scans all serial ports, opens the one where the DK21 responds, and
+  /// returns the port name (e.g. "/dev/ttyS4"). Throws on failure.
+  static Future<String> findAndOpenNfc() async {
+    return await _channel.invokeMethod('findAndOpenNfc');
+  }
 }

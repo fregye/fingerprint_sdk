@@ -8,6 +8,7 @@ import android.os.Looper;
 import com.IDWORLD.Interface;
 import com.dk.uartnfc.DeviceManager.DeviceManagerCallback;
 import com.dk.uartnfc.DeviceManager.UartNfcDevice;
+import com.dk.uartnfc.Exception.DeviceNoResponseException;
 import com.dk.uartnfc.Tool.StringTool;
 
 import java.util.List;
@@ -65,6 +66,7 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
             case "openNfc":       openNfc(call, result);    break;
             case "closeNfc":      closeNfc(result);         break;
             case "getNfcPorts":   getNfcPorts(result);      break;
+            case "findAndOpenNfc": findAndOpenNfc(result);  break;
             default: result.notImplemented();
         }
     }
@@ -149,6 +151,43 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodCallHandler, A
     private void getNfcPorts(Result result) {
         List<String> ports = uartNfcDevice.serialManager.getAvailablePorts();
         result.success(ports);
+    }
+
+    // Tries each available port until the DK21 responds to getFirmwareVersion().
+    // Returns the port name on success, or an error if not found.
+    private void findAndOpenNfc(Result result) {
+        new Thread(() -> {
+            try {
+                List<String> ports = uartNfcDevice.serialManager.getAvailablePorts();
+                android.util.Log.i("NFC", "Scanning ports: " + ports);
+                for (String port : ports) {
+                    if (uartNfcDevice.serialManager.isOpen()) {
+                        uartNfcDevice.serialManager.close();
+                    }
+                    boolean opened = uartNfcDevice.serialManager.open(port, "115200");
+                    if (!opened) {
+                        android.util.Log.w("NFC", "Could not open " + port);
+                        continue;
+                    }
+                    try {
+                        Thread.sleep(600);
+                        String version = uartNfcDevice.getFirmwareVersion();
+                        android.util.Log.i("NFC", "DK21 found on " + port + ", firmware=" + version);
+                        result.success(port);
+                        return;
+                    } catch (DeviceNoResponseException e) {
+                        android.util.Log.w("NFC", port + " no response");
+                        uartNfcDevice.serialManager.close();
+                    } catch (InterruptedException e) {
+                        result.error("INTERRUPTED", null, null);
+                        return;
+                    }
+                }
+                result.error("NO_NFC", "DK21 not found on any port", null);
+            } catch (Exception e) {
+                result.error("SCAN_FAILED", e.getMessage(), null);
+            }
+        }).start();
     }
 
     private final DeviceManagerCallback nfcCallback = new DeviceManagerCallback() {
