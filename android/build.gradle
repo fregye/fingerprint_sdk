@@ -16,6 +16,7 @@ rootProject.allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url 'https://jitpack.io' }
     }
 }
 
@@ -37,4 +38,8 @@ android {
             jniLibs.srcDirs = ['src/main/jniLibs']
         }
     }
+}
+
+dependencies {
+    implementation 'com.gitee.lochy:dkcloudid-uart-android-sdk:v2.2.4'
 }
