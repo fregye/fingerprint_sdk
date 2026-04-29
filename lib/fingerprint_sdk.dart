@@ -164,7 +164,116 @@ class FingerprintSdk {
     };
   }
 
-  // Sends a DESFire command and collects all frames (status 91 AF = more data).
+  /// Scans all DESFire applications and reads every publicly accessible file.
+  ///
+  /// Returns a Map keyed by AID hex string (e.g. "000001"). Each value is a
+  /// list of file entries with keys:
+  ///   fileId     – hex string (e.g. "01")
+  ///   accessible – bool: false if protected by a key
+  ///   hex        – raw data as uppercase hex (only when accessible)
+  ///   text       – printable ASCII extracted from data (only when present)
+  ///
+  /// The Ghana Card Number (GHA-XXXXXXXXX-X) will appear in [text] if it is
+  /// stored in a publicly readable file. Expect this call to take 5–15 s
+  /// while the card is held on the reader.
+  static Future<Map<String, List<Map<String, dynamic>>>> scanDesFirePublicData() async {
+    final result = <String, List<Map<String, dynamic>>>{};
+
+    // Try the PICC master application (AID 000000) plus all user apps.
+    final List<String> aids = ['000000', ...await readDesFireApplicationIds()];
+
+    for (final aid in aids) {
+      try {
+        final aidBytes = _hexToBytes(aid);
+
+        // Select application
+        final selResp = await transceiveNfc(
+            [0x90, 0x5A, 0x00, 0x00, 0x03, ...aidBytes, 0x00]);
+        if (!_desFireOk(selResp)) continue;
+
+        // GetFileIDs
+        final fileIdsResp = await transceiveNfc([0x90, 0x6F, 0x00, 0x00, 0x00]);
+        if (!_desFireOk(fileIdsResp)) continue;
+        final fileIds = fileIdsResp.sublist(0, fileIdsResp.length - 2);
+
+        final files = <Map<String, dynamic>>[];
+
+        for (final fileId in fileIds) {
+          final fileIdHex =
+              fileId.toRadixString(16).padLeft(2, '0').toUpperCase();
+          try {
+            // GetFileSettings
+            final sResp = await transceiveNfc(
+                [0x90, 0xF5, 0x00, 0x00, 0x01, fileId, 0x00]);
+            if (!_desFireOk(sResp)) continue;
+            final s = sResp.sublist(0, sResp.length - 2);
+            if (s.length < 4) continue;
+
+            final fileType = s[0];
+            // AccessRights: s[2]=RW|Change nibbles, s[3]=Read|Write nibbles
+            // 0xE = free/public
+            final readKey = (s[3] >> 4) & 0x0F;
+
+            if (readKey != 0x0E) {
+              files.add({'fileId': fileIdHex, 'fileType': fileType,
+                         'accessible': false, 'readKey': readKey});
+              continue;
+            }
+
+            // Read the file (offset=0, length=0 means read all in DESFire)
+            List<int> cmd;
+            if (fileType == 0x02) {
+              // Value file → GetValue
+              cmd = [0x90, 0x6C, 0x00, 0x00, 0x01, fileId, 0x00];
+            } else if (fileType == 0x03 || fileType == 0x04) {
+              // Record file → ReadRecords
+              cmd = [0x90, 0xBB, 0x00, 0x00, 0x07,
+                     fileId, 0, 0, 0, 0, 0, 0, 0x00];
+            } else {
+              // Standard / Backup → ReadData
+              cmd = [0x90, 0xBD, 0x00, 0x00, 0x07,
+                     fileId, 0, 0, 0, 0, 0, 0, 0x00];
+            }
+
+            final dResp = await transceiveNfc(cmd, timeout: 3000);
+            if (!_desFireOk(dResp)) {
+              files.add({'fileId': fileIdHex, 'fileType': fileType,
+                         'accessible': false, 'error': 'read denied'});
+              continue;
+            }
+
+            final data = dResp.sublist(0, dResp.length - 2);
+            final hex = data
+                .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+                .join();
+            // Extract printable ASCII — Ghana Card No. is ASCII text
+            final text = String.fromCharCodes(
+                data.where((b) => b >= 0x20 && b <= 0x7E));
+
+            files.add({
+              'fileId': fileIdHex,
+              'fileType': fileType,
+              'accessible': true,
+              'hex': hex,
+              if (text.trim().isNotEmpty) 'text': text.trim(),
+            });
+          } catch (_) {
+            files.add(
+                {'fileId': fileIdHex, 'accessible': false, 'error': 'exception'});
+          }
+        }
+
+        if (files.isNotEmpty) result[aid] = files;
+      } catch (_) {
+        continue;
+      }
+    }
+    return result;
+  }
+
+  // ── DeSFire internals ─────────────────────────────────────────────────────────
+
+  // Sends a DeSFire command and collects all frames (status 91 AF = more data).
   static Future<List<int>> _desFireMultiFrame(List<int> firstCmd) async {
     const moreData = [0x90, 0xAF, 0x00, 0x00, 0x00];
     final List<int> buf = [];
@@ -181,6 +290,11 @@ class FingerprintSdk {
     }
     return buf;
   }
+
+  static bool _desFireOk(Uint8List resp) =>
+      resp.length >= 2 &&
+      resp[resp.length - 2] == 0x91 &&
+      resp[resp.length - 1] == 0x00;
 
   static List<int> _hexToBytes(String hex) {
     hex = hex.replaceAll(' ', '');
